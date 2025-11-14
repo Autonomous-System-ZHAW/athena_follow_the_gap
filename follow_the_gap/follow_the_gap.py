@@ -6,6 +6,7 @@ from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import TwistStamped
 import numpy as np
 from geometry_msgs.msg import PoseStamped
+from ackermann_msgs.msg import AckermannDriveStamped
 from std_msgs.msg import Header
 from nav_msgs.msg import Path
 from follow_the_gap.calculation import CalculationFollowTheGap
@@ -48,13 +49,9 @@ class FollowTheGap(Node):
         self.sub = self.create_subscription(
             LaserScan, "/scan", self.lidar_callback, qos_policy
         )
-        """
-        self.twist_pub = self.create_publisher(
-            TwistStamped, "/ack_steer/reference", qos_policy
-        )
-        """
-        self.twist_pub = self.create_publisher(
-            TwistStamped, "/bicycle_steer/reference", qos_policy
+
+        self.ackermann_pub = self.create_publisher(
+            AckermannDriveStamped, "/ackermann_cmd", qos_policy
         )
 
         self.sub_emergency = self.create_subscription(
@@ -129,15 +126,13 @@ class FollowTheGap(Node):
             steering (float): Steering angle command (radians).
         """
 
-        twist_msg = TwistStamped()
-        twist_msg.twist.angular.z = 0
+        ackermann_msg = AckermannDriveStamped()
+        ackermann_msg.header.stamp = self.get_clock().now().to_msg()
 
-        twist_msg.header.stamp = self.get_clock().now().to_msg()
+        ackermann_msg.drive.speed = speed
+        ackermann_msg.drive.steering_angle = steering
 
-        twist_msg.twist.linear.x = speed
-        twist_msg.twist.angular.z = steering
-
-        self.twist_pub.publish(twist_msg)
+        self.ackermann_pub.publish(ackermann_msg)
 
 
 def main():
