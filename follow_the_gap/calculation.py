@@ -1,5 +1,6 @@
 import numpy as np
 from sensor_msgs.msg import LaserScan
+from nav_msgs.msg import Odometry
 from rclpy.impl.rcutils_logger import RcutilsLogger
 
 CAR_WIDTH = 0.21
@@ -23,21 +24,21 @@ class CalculationFollowTheGap:
     def __init__(self, logger: RcutilsLogger):
         self.get_logger = logger
 
-    def calculate_steering(self, msg: LaserScan):
+    def calculate_steering(self, msg_scan: LaserScan, msg_odom: Odometry):
         """
         Calculate the steering angle and driving speed using the
         Follow-The-Gap algorithm.
 
         Args:
-            msg (LaserScan): LiDAR scan message containing distance
-                             measurements around the vehicle.
+            msg_scan (LaserScan): LiDAR scan message containing distance
+                                measurements around the vehicle.
 
         Returns:
             tuple[float, float]: Steering angle (radians) and driving speed.
         """
 
         # filter only relevant lidar points
-        relevant_lidar_points = self.__process_lidar_data(msg)
+        relevant_lidar_points = self.__process_lidar_data(msg_scan)
 
         # calculate disparity of the relevant lidar points
         lidar_points_with_safety = self.__calculate_disparities(relevant_lidar_points)

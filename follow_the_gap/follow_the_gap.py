@@ -8,7 +8,7 @@ import numpy as np
 from geometry_msgs.msg import PoseStamped
 from ackermann_msgs.msg import AckermannDriveStamped
 from std_msgs.msg import Header
-from nav_msgs.msg import Path
+from nav_msgs.msg import Path, Odometry
 from follow_the_gap.calculation import CalculationFollowTheGap
 from tf2_ros import Buffer, TransformListener
 from geometry_msgs.msg import TransformStamped
@@ -16,7 +16,7 @@ from std_msgs.msg import Bool
 
 # heading_diff is 20° (≈ 0.349 rad). With 0.33 rad, we are slightly below this value.
 MAX_STEERING_ANGLE_RADIANS = 0.33
-BASIC_SPEED = 1.7825
+BASIC_SPEED = 1.0
 CAR_LENGTH = 0.26
 
 
@@ -50,6 +50,10 @@ class FollowTheGap(Node):
             LaserScan, "/scan", self.lidar_callback, qos_policy
         )
 
+        self.sub = self.create_subscription(
+            Odometry, "/odom", self.odom_callback, qos_policy
+        )
+
         self.ackermann_pub = self.create_publisher(
             AckermannDriveStamped, "/ackermann_cmd", qos_policy
         )
@@ -58,40 +62,28 @@ class FollowTheGap(Node):
             Bool, "/emergency", self.emergency_callback, 10
         )
 
-    def get_transform(self):
+    def lidar_callback(self, msg_scan: LaserScan):
         """
-        Lookup the transformation between `odom` and `base_link` frames.
-
-        Returns:
-            tuple[float, float]: The x and y translation (in meters) of
-                                 `base_link` relative to `odom`.
-        """
-
-        now = rclpy.time.Time()
-        trans: TransformStamped = self.tf_buffer.lookup_transform(
-            "odom", "base_link", now  # parent frame  # child frame
-        )
-
-        x = trans.transform.translation.x
-        y = trans.transform.translation.y
-        z = trans.transform.translation.z
-
-        self.get_logger().info(
-            f"base_link Position relativ zu odom: x={x:.2f}, y={y:.2f}, z={z:.2f}"
-        )
-        return x, y
-
-    def lidar_callback(self, msg: LaserScan):
-        """
-        Callback for incoming LiDAR data. Processes the scan using the
+        Callback for incoming LiDAR. Processes the scan using the
         Follow-The-Gap algorithm, calculates steering and speed, applies
         emergency handling if necessary, and actuates the car.
 
+        The last received odometry message is used together with the LiDAR data
+        to compute the steering. Since odometry is published at a higher rate
+        than the LiDAR scans, the algorithm always uses the most recent odometry
+        data whenever a new LiDAR message arrives.
+
         Args:
-            msg (LaserScan): Incoming LiDAR scan message.
+            msg_scan (LaserScan): Incoming LiDAR scan message.
         """
 
-        steering, speed_factor = self.calculate.calculate_steering(msg)
+        # check if odom is already available
+        if self.last_odom is None:
+            return
+
+        steering, speed_factor = self.calculate.calculate_steering(
+            msg_scan, self.last_odom
+        )
         steering = np.clip(
             steering,
             BASIC_SPEED * self.lower_steering_limit,
@@ -105,6 +97,16 @@ class FollowTheGap(Node):
             self.actuate_car(0.0, 0.0)
         else:
             self.actuate_car(speed, steering)
+
+    def odom_callback(self, msg_odom: Odometry):
+        """
+        Save the latest odometry data received from the VESC controller.
+
+        Args:
+            msg_odom (Odometry): Incoming Odometry message.
+        """
+
+        self.last_odom = msg_odom
 
     def emergency_callback(self, msg: Bool) -> None:
         """
