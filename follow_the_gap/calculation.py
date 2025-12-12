@@ -24,7 +24,7 @@ class CalculationFollowTheGap:
     def __init__(self, logger: RcutilsLogger):
         self.get_logger = logger
 
-    def calculate_steering(self, msg_scan: LaserScan, msg_odom: Odometry):
+    def calculate_steering(self, msg_scan: LaserScan):
         """
         Calculate the steering angle and driving speed using the
         Follow-The-Gap algorithm.

@@ -43,22 +43,31 @@ class FollowTheGap(Node):
         self.upper_steering_limit = MAX_STEERING_ANGLE_RADIANS
 
         self.tf_listener = TransformListener(self.tf_buffer, self)
-        qos_policy = rclpy.qos.QoSProfile(
+
+        sensor_qos = rclpy.qos.QoSProfile(
             reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT,
             history=rclpy.qos.HistoryPolicy.KEEP_LAST,
             depth=1,
         )
 
-        self.sub = self.create_subscription(
-            LaserScan, "/scan", self.lidar_callback, qos_policy
+        control_qos = rclpy.qos.QoSProfile(
+            reliability=rclpy.qos.ReliabilityPolicy.RELIABLE,
+            history=rclpy.qos.HistoryPolicy.KEEP_LAST,
+            depth=1,
         )
 
-        self.sub = self.create_subscription(
-            Odometry, "/odom", self.odom_callback, qos_policy
+        self.scan_sub = self.create_subscription(
+            LaserScan, "/scan", self.lidar_callback, sensor_qos
         )
+
+        """
+        self.odom_sub = self.create_subscription(
+            Odometry, "/sensors/imu", self.odom_callback, sensor_qos
+        )
+        """
 
         self.ackermann_pub = self.create_publisher(
-            AckermannDriveStamped, "/ackermann_cmd", qos_policy
+            AckermannDriveStamped, "/ackermann_cmd", control_qos
         )
 
         self.sub_emergency = self.create_subscription(
@@ -81,12 +90,10 @@ class FollowTheGap(Node):
         """
 
         # check if odom is already available
-        if self.last_odom is None:
-            return
+        # if self.last_odom is None:
+        # return
 
-        steering, speed_factor = self.calculate.calculate_steering(
-            msg_scan, self.last_odom
-        )
+        steering, speed_factor = self.calculate.calculate_steering(msg_scan)
         steering = np.clip(
             steering,
             BASIC_SPEED * self.lower_steering_limit,
