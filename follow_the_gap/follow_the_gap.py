@@ -35,9 +35,12 @@ class FollowTheGap(Node):
         self.tf_buffer = Buffer()
         self.emergency = False
         # curvature calculation lower steering
-        self.lower_steering_limit = np.tan(-MAX_STEERING_ANGLE_RADIANS) / CAR_LENGTH
+        # self.lower_steering_limit = np.tan(-MAX_STEERING_ANGLE_RADIANS) / CAR_LENGTH
+        self.lower_steering_limit = -MAX_STEERING_ANGLE_RADIANS
+
         # curvature calculation upper steering
-        self.upper_steering_limit = np.tan(MAX_STEERING_ANGLE_RADIANS) / CAR_LENGTH
+        # self.upper_steering_limit = np.tan(MAX_STEERING_ANGLE_RADIANS) / CAR_LENGTH
+        self.upper_steering_limit = MAX_STEERING_ANGLE_RADIANS
 
         self.tf_listener = TransformListener(self.tf_buffer, self)
         qos_policy = rclpy.qos.QoSProfile(
