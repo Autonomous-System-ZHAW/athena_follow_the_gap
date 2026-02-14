@@ -1,5 +1,4 @@
 import rclpy
-from rclpy.node import Node
 
 import rclpy.time
 from sensor_msgs.msg import LaserScan
@@ -13,6 +12,8 @@ from follow_the_gap.calculation import CalculationFollowTheGap
 from tf2_ros import Buffer, TransformListener
 from geometry_msgs.msg import TransformStamped
 from std_msgs.msg import Bool
+from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
+
 
 # heading_diff is 20° (≈ 0.349 rad). With 0.33 rad, we are slightly below this value.
 MAX_STEERING_ANGLE_RADIANS = 0.33
@@ -20,7 +21,7 @@ BASIC_SPEED = 1.0
 CAR_LENGTH = 0.26
 
 
-class FollowTheGap(Node):
+class FollowTheGap(LifecycleNode):
     """
     ROS2 node that implements the Follow-The-Gap algorithm for autonomous
     navigation. It subscribes to LiDAR scans, computes the optimal steering
@@ -44,6 +45,11 @@ class FollowTheGap(Node):
 
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
+        self.scan_sub = None
+        self.ackermann_pub = None
+        self.emergency_sub = None
+
+    def on_configure(self, state: State):
         sensor_qos = rclpy.qos.QoSProfile(
             reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT,
             history=rclpy.qos.HistoryPolicy.KEEP_LAST,
@@ -66,13 +72,37 @@ class FollowTheGap(Node):
         )
         """
 
-        self.ackermann_pub = self.create_publisher(
+        self.ackermann_pub = self.create_lifecycle_publisher(
             AckermannDriveStamped, "/ackermann_cmd", control_qos
         )
 
-        self.sub_emergency = self.create_subscription(
-            Bool, "/emergency", self.emergency_callback, 10
+        self.emergency_sub = self.create_subscription(
+            Bool, "/emergency_stop", self.emergency_callback, 10
         )
+
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_activate(self, state: State):
+        self.get_logger().info("Activating...")
+        self.ackermann_pub.activate()
+
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_deactivate(self, state: State):
+        self.get_logger().info("Deactivating...")
+        self.actuate_car(0.0, 0.0)
+        self.ackermann_pub.deactivate()
+
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_cleanup(self, state: State):
+        self.get_logger().info("Cleaning up...")
+
+        self.destroy_publisher(self.ackermann_pub)
+        self.destroy_subscription(self.scan_sub)
+        self.destroy_subscription(self.emergency_sub)
+
+        return TransitionCallbackReturn.SUCCESS
 
     def lidar_callback(self, msg_scan: LaserScan):
         """
@@ -138,6 +168,9 @@ class FollowTheGap(Node):
             steering (float): Steering angle command (radians).
         """
 
+        if not self.ackermann_pub.is_activated:
+            return
+
         ackermann_msg = AckermannDriveStamped()
         ackermann_msg.header.stamp = self.get_clock().now().to_msg()
 
@@ -149,9 +182,9 @@ class FollowTheGap(Node):
 
 def main():
     rclpy.init()
-
     node = FollowTheGap()
     rclpy.spin(node)
+    node.destroy_node()
     rclpy.shutdown()
 
 
