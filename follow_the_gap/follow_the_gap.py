@@ -17,7 +17,7 @@ from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
 
 # heading_diff is 20° (≈ 0.349 rad). With 0.33 rad, we are slightly below this value.
 MAX_STEERING_ANGLE_RADIANS = 0.33
-BASIC_SPEED = 1.0
+BASIC_SPEED = 0.5
 CAR_LENGTH = 0.26
 
 
@@ -73,7 +73,7 @@ class FollowTheGap(LifecycleNode):
         """
 
         self.ackermann_pub = self.create_lifecycle_publisher(
-            AckermannDriveStamped, "/ackermann_cmd", control_qos
+            AckermannDriveStamped, "/ackermann_cmd", 10
         )
 
         self.emergency_sub = self.create_subscription(
@@ -84,14 +84,14 @@ class FollowTheGap(LifecycleNode):
 
     def on_activate(self, state: State):
         self.get_logger().info("Activating...")
-        self.ackermann_pub.activate()
+        self.ackermann_pub.on_activate(state)
 
         return TransitionCallbackReturn.SUCCESS
 
     def on_deactivate(self, state: State):
         self.get_logger().info("Deactivating...")
         self.actuate_car(0.0, 0.0)
-        self.ackermann_pub.deactivate()
+        self.ackermann_pub.on_deactivate(state)
 
         return TransitionCallbackReturn.SUCCESS
 
