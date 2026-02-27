@@ -17,7 +17,7 @@ from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
 
 # heading_diff is 20° (≈ 0.349 rad). With 0.33 rad, we are slightly below this value.
 MAX_STEERING_ANGLE_RADIANS = 0.33
-BASIC_SPEED = 0.5
+BASIC_SPEED = 0.8
 CAR_LENGTH = 0.26
 
 
@@ -123,12 +123,20 @@ class FollowTheGap(LifecycleNode):
         # if self.last_odom is None:
         # return
 
-        steering, speed_factor = self.calculate.calculate_steering(msg_scan)
+        steering = self.calculate.calculate_steering(msg_scan)
+        self.get_logger().info(f"Steering before: {steering}")
+        """
         steering = np.clip(
             steering,
-            BASIC_SPEED * self.lower_steering_limit,
-            BASIC_SPEED * self.upper_steering_limit,
+            self.lower_steering_limit,
+            self.upper_steering_limit,
         )
+        """
+        steering = self.steering_mapping(steering)
+        self.get_logger().info(f"Steering after: {steering}")
+
+        # self.get_logger().info("Steering after: %s", steering)
+
         speed = (
             BASIC_SPEED  # * speed_factor # + ((np.pi / 2) - np.abs(steering)) / np.pi
         )
@@ -137,6 +145,13 @@ class FollowTheGap(LifecycleNode):
             self.actuate_car(0.0, 0.0)
         else:
             self.actuate_car(speed, steering)
+
+    def steering_mapping(self, steering_value):
+        # return 0.4/3.14 * steering_value + 0.5
+        # return 3.14/0.4 * steering_value - 3.925
+
+        return -3.14 / 0.4 * steering_value + 3.925
+        # return -5 * steering_value + 2.5
 
     def odom_callback(self, msg_odom: Odometry):
         """
