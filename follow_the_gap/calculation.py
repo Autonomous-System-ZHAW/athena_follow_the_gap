@@ -3,14 +3,15 @@ from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
 from rclpy.impl.rcutils_logger import RcutilsLogger
 
-CAR_WIDTH = 0.21
-MINIMAL_DISPARITY_GAP = 1.4
-DISPARITY_DISTANCE = 3.5
+CAR_WIDTH = 0.24
+MINIMAL_DISPARITY_GAP = 1.0
+DISPARITY_DISTANCE = 5.5
 DEFAULT_GAP = 0.8
 DISTANCE_10_METER = 10
 DISTANCE_5_METER = 5
 DISTANCE_2_METER = 2
 DISTANCE_1_METER = 1
+SAFETY_MARGIN = 0.9
 
 
 class CalculationFollowTheGap:
@@ -53,7 +54,13 @@ class CalculationFollowTheGap:
         steering, speed = self.__best_goal_point(goal_target)
 
         # return steering/goal_target[1]*1.7825, speed
-        return steering, speed
+        return (
+            steering,
+            speed,
+            goal_target,
+            relevant_lidar_points,
+            lidar_points_with_safety,
+        )
 
     def __process_lidar_data(self, msg: LaserScan) -> list:
         self.angle_increment = msg.angle_increment
@@ -90,7 +97,7 @@ class CalculationFollowTheGap:
 
             if (
                 MINIMAL_DISPARITY_GAP <= disparity
-                and current_distance <= DISPARITY_DISTANCE
+                and min(current_distance, next_distance) <= DISPARITY_DISTANCE
             ):
                 disparities.append(current_index)
 
@@ -119,33 +126,42 @@ class CalculationFollowTheGap:
         return possible_gaps
 
     def __max_gap(self, all_possible_gaps_with_safety: list) -> list:
+        if not all_possible_gaps_with_safety:
+            half = int(self.angle_increment_value_180_degree / self.angle_increment / 2)
+            return (half, DEFAULT_GAP)
+
         deepest_gap_sum = 0
         index_deepest_gap = []
 
         for i in all_possible_gaps_with_safety:
             sum_current_gap = 0
-
             for index, dist in i:
                 sum_current_gap += dist
-
             sum_current_gap = sum_current_gap / len(i)
 
             if deepest_gap_sum < sum_current_gap:
                 deepest_gap_sum = sum_current_gap
                 index_deepest_gap = i
 
-        best_point = max(index_deepest_gap, key=lambda p: p[1])
+        if not index_deepest_gap:
+            half = int(self.angle_increment_value_180_degree / self.angle_increment / 2)
+            return (half, DEFAULT_GAP)
+        value = max(index_deepest_gap, key=lambda p: p[1])
 
-        return best_point
+        # self.get_logger().info(f"deepedst gap: {index_deepest_gap[value[0]- 10]}")
+        return value
 
     def __safety_bubble(self, relevant_lidar_points: list, disparities: list) -> list:
         # set safety bubble and all points inside the bubbel to zero
         filtered_points = relevant_lidar_points.copy()
+
         for index_dis in disparities:
             _, distance = filtered_points[index_dis]
             if distance <= 0:
                 continue
-            alpha = 2 * np.arcsin(CAR_WIDTH / (2 * distance))
+
+            SAFETY_FACTOR = 1.0  # 50% Puffer zusätzlich zur Autobreite
+            alpha = 2 * np.arcsin(min((CAR_WIDTH / 2 + SAFETY_MARGIN) / distance, 1.0))
             bubble_indices = int(alpha / self.angle_increment)
 
             for i in range(len(filtered_points)):
@@ -153,6 +169,9 @@ class CalculationFollowTheGap:
                 if abs(index - index_dis) <= bubble_indices:
                     filtered_points[i] = (index, 0)
 
+        """ self.get_logger().info(
+            f"distance: {distance}, alpha: {alpha}, bubble_indices: {bubble_indices}"
+        ) """
         return filtered_points
 
     def __best_goal_point(self, goal_target):
@@ -167,7 +186,8 @@ class CalculationFollowTheGap:
             speed_factor = 0.6
         else:
             speed_factor = 0.4
-        steering = goal_target[0] * self.angle_increment
+        steering = (goal_target[0]) * self.angle_increment
         return (
-            steering - (self.angle_increment_value_180_degree / 2)
-        ) * speed_factor, speed_factor
+            (steering - (self.angle_increment_value_180_degree / 2)) * speed_factor,
+            speed_factor,
+        )
