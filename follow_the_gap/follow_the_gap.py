@@ -139,7 +139,6 @@ class FollowTheGap(LifecycleNode):
         steering, speed, goal, relevant_lidar_points, lidar_points_with_safety = (
             self.calculate.calculate_steering(msg_scan)
         )
-        self.get_logger().info(f"Steering before: {steering}")
 
         sign = 1 if steering >= 0 else -1
 
@@ -220,27 +219,7 @@ class FollowTheGap(LifecycleNode):
             ),
         )
 
-        # self.get_logger().info(f"goal point: {goal}")
-        # self.get_logger().info(f"raw speed: {speed}")
-        # self.get_logger().info(f"raw steering: {steering}")
-
-        # steering = self.steering_mapping(steering)
-        # steering = self.soft_clip_delta(steering)
-        # self.get_logger().info(f"distance: {goal_dist}")
-
         steering = self.pure_pursuit(goal_dist, goal_x) * sign
-
-        print(f"steering: {steering}")
-
-        t = self.tf_buffer.lookup_transform(
-            "World",
-            "Chassis",
-            rclpy.time.Time(),
-            timeout=rclpy.duration.Duration(seconds=1),
-        )
-        q = t.transform.rotation
-        r = R.from_quat([q.x, q.y, q.z, q.w])
-        euler = r.as_euler("xyz", degrees=True)
 
         rr.log(
             "car/curvature",
@@ -319,10 +298,7 @@ class FollowTheGap(LifecycleNode):
         ackermann_msg = AckermannDriveStamped()
         ackermann_msg.header.stamp = self.get_clock().now().to_msg()
 
-        # self.get_logger().info(f"final speed: {speed}")
-        # self.get_logger().info(f"final steering: {steering}")
-
-        ackermann_msg.drive.speed = 1.0  # float(speed)
+        ackermann_msg.drive.speed = 1.25  # float(speed)
         ackermann_msg.drive.steering_angle = float(steering)
 
         rr.log(

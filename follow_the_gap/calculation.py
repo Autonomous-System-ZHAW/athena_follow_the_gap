@@ -4,14 +4,14 @@ from nav_msgs.msg import Odometry
 from rclpy.impl.rcutils_logger import RcutilsLogger
 
 CAR_WIDTH = 0.24
-MINIMAL_DISPARITY_GAP = 1.0
+MINIMAL_DISPARITY_GAP = 0.7
 DISPARITY_DISTANCE = 5.5
 DEFAULT_GAP = 0.8
 DISTANCE_10_METER = 10
 DISTANCE_5_METER = 5
 DISTANCE_2_METER = 2
 DISTANCE_1_METER = 1
-SAFETY_MARGIN = 0.9
+SAFETY_MARGIN = 0.1  # 0.9
 
 
 class CalculationFollowTheGap:
@@ -160,7 +160,6 @@ class CalculationFollowTheGap:
             if distance <= 0:
                 continue
 
-            SAFETY_FACTOR = 1.0  # 50% Puffer zusätzlich zur Autobreite
             alpha = 2 * np.arcsin(min((CAR_WIDTH / 2 + SAFETY_MARGIN) / distance, 1.0))
             bubble_indices = int(alpha / self.angle_increment)
 
