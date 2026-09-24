@@ -186,7 +186,14 @@ class CalculationFollowTheGap:
         else:
             speed_factor = 0.4
         steering = (goal_target[0]) * self.angle_increment
+
         return (
             (steering - (self.angle_increment_value_180_degree / 2)) * speed_factor,
             speed_factor,
         )
+        """
+        return (
+            (steering - (self.angle_increment_value_180_degree / 2)) * speed_factor,
+            speed_factor,
+        )
+        """

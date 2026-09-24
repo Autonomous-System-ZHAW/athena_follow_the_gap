@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 import os
 from glob import glob
 
-package_name = "follow_the_gap"
+package_name = "athena_follow_the_gap"
 
 setup(
     name=package_name,
@@ -25,7 +25,7 @@ setup(
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
-            "follow_the_gap = follow_the_gap.follow_the_gap:main",
+            "follow_the_gap = athena_follow_the_gap.follow_the_gap_node:main",
         ],
     },
 )

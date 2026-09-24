@@ -10,7 +10,7 @@ from geometry_msgs.msg import PoseStamped
 from ackermann_msgs.msg import AckermannDriveStamped
 from std_msgs.msg import Header
 from nav_msgs.msg import Path, Odometry
-from follow_the_gap.calculation import CalculationFollowTheGap
+from athena_follow_the_gap.calculation import CalculationFollowTheGap
 from tf2_ros import Buffer, TransformListener
 from geometry_msgs.msg import TransformStamped
 from std_msgs.msg import Bool
@@ -52,9 +52,11 @@ class FollowTheGap(LifecycleNode):
         self.max_delta = 0.2
         self.lookahead = 5.0
 
-        rr.init("follow_the_gap", spawn=True)
+        rr.init("Athena Simulation", recording_id="athena")
+        rr.connect_grpc("rerun+http://localhost:9876/proxy")
+        # rr.serve_grpc()
+
         rr.log("/", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True)
-        # rr.connect_grpc("rerun+http://localhost:9876/proxy")
 
         self.goal_points = []
 
