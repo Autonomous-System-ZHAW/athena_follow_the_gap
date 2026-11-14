@@ -1,5 +1,6 @@
 import rclpy
-import rerun as rr
+
+# import rerun as rr
 import time
 
 import rclpy.time
@@ -13,12 +14,14 @@ from nav_msgs.msg import Path, Odometry
 from athena_follow_the_gap.calculation import CalculationFollowTheGap
 from tf2_ros import Buffer, TransformListener
 from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import Point
 from std_msgs.msg import Bool
+from visualization_msgs.msg import Marker
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
 from scipy.spatial.transform import Rotation as R
 
-# heading_diff is 20° (≈ 0.349 rad). With 0.33 rad, we are slightly below this value.
-MAX_STEERING_ANGLE_RADIANS = 0.33
+# heading_diff is 20° (≈ 0.349 rad). With 0.26 rad, we are slightly below this value.
+MAX_STEERING_ANGLE_RADIANS = 0.25
 BASIC_SPEED = 1.0
 CAR_LENGTH = 0.26
 WHEELBASE = 0.84
@@ -52,17 +55,20 @@ class FollowTheGap(LifecycleNode):
         self.max_delta = 0.2
         self.lookahead = 5.0
 
-        rr.init("Athena Simulation", recording_id="athena")
-        rr.connect_grpc("rerun+http://localhost:9876/proxy")
+        # rr.init("Athena Simulation", recording_id="athena")
+        # rr.connect_grpc("rerun+http://localhost:9876/proxy")
         # rr.serve_grpc()
 
-        rr.log("/", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True)
+        # rr.log("/", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True)
 
         self.goal_points = []
 
         self.scan_sub = None
         self.ackermann_pub = None
         self.emergency_sub = None
+        self.goal_pub = None
+        self.points_pub = None
+        self.arc_pub = None
 
     def on_configure(self, state: State):
         sensor_qos = rclpy.qos.QoSProfile(
@@ -95,6 +101,15 @@ class FollowTheGap(LifecycleNode):
             Bool, "/emergency_stop", self.emergency_callback, 10
         )
 
+        # goal point for visualisation in Foxglove (normal publisher, also works while inactive)
+        self.goal_pub = self.create_publisher(Marker, "/follow_the_gap/goal", 10)
+        # lidar points the algorithm uses (front half), for visualisation in Foxglove
+        self.points_pub = self.create_publisher(
+            Marker, "/follow_the_gap/relevant_points", 10
+        )
+        # pure pursuit arc from the car to the goal point, for visualisation in Foxglove
+        self.arc_pub = self.create_publisher(Marker, "/follow_the_gap/curvature", 10)
+
         return TransitionCallbackReturn.SUCCESS
 
     def on_activate(self, state: State):
@@ -116,6 +131,9 @@ class FollowTheGap(LifecycleNode):
         self.destroy_publisher(self.ackermann_pub)
         self.destroy_subscription(self.scan_sub)
         self.destroy_subscription(self.emergency_sub)
+        self.destroy_publisher(self.goal_pub)
+        self.destroy_publisher(self.points_pub)
+        self.destroy_publisher(self.arc_pub)
 
         return TransitionCallbackReturn.SUCCESS
 
@@ -142,7 +160,7 @@ class FollowTheGap(LifecycleNode):
             self.calculate.calculate_steering(msg_scan)
         )
 
-        sign = 1 if steering >= 0 else -1
+        self.get_logger().info(f"Steering 1: {steering}, Speed 1: {speed}")
 
         """
         steering = np.clip(
@@ -174,8 +192,27 @@ class FollowTheGap(LifecycleNode):
 
         points = np.stack([x, y, z], axis=1)
 
-        rr.set_time("sim_time", timestamp=time.time())
+        # publish the relevant lidar points as magenta dots in the lidar frame
+        # (display only: rotated by angle_min, so they lie on the scan in Foxglove)
+        points_marker = Marker()
+        points_marker.header = msg_scan.header  # same frame and time as the scan
+        points_marker.ns = "follow_the_gap"
+        points_marker.id = 1
+        points_marker.type = Marker.POINTS
+        points_marker.action = Marker.ADD
+        points_marker.pose.orientation.w = 1.0
+        points_marker.scale.x = 0.04  # point width [m]
+        points_marker.scale.y = 0.04  # point height [m]
+        points_marker.color.r = 1.0
+        points_marker.color.b = 1.0
+        points_marker.color.a = 1.0
+        for px, py in zip(x, y):
+            dx, dy = self.to_display(px, py, msg_scan.angle_min)
+            points_marker.points.append(Point(x=dx, y=dy, z=0.0))
+        self.points_pub.publish(points_marker)
 
+        # rr.set_time("sim_time", timestamp=time.time())
+        """
         rr.log(
             "car",
             rr.Ellipsoids3D(
@@ -197,6 +234,7 @@ class FollowTheGap(LifecycleNode):
         )
 
         # green
+                 
         rr.log(
             "car/lidar_disparity",
             rr.Points3D(
@@ -205,6 +243,7 @@ class FollowTheGap(LifecycleNode):
                 colors=[[51, 255, 51]] * len(points),
             ),
         )
+        """
 
         goal_index, goal_dist = goal[0], goal[1]
         goal_angle = goal_index * msg_scan.angle_increment
@@ -212,6 +251,47 @@ class FollowTheGap(LifecycleNode):
         goal_x = goal_dist * np.cos(goal_angle)
         goal_y = goal_dist * np.sin(goal_angle)
 
+        # steering direction from the goal side: goal_x > 0 = goal on the right
+        # (algorithm coordinates), ROS steering: + = left, - = right
+        sign = 1 if goal_x < 0 else -1
+
+        # publish the goal point as a red sphere in the lidar frame
+        marker = Marker()
+        marker.header = msg_scan.header  # same frame and time as the scan
+        marker.ns = "follow_the_gap"
+        marker.id = 0
+        marker.type = Marker.SPHERE
+        marker.action = Marker.ADD
+        goal_dx, goal_dy = self.to_display(goal_x, goal_y, msg_scan.angle_min)
+        marker.pose.position.x = goal_dx
+        marker.pose.position.y = goal_dy
+        marker.pose.position.z = 0.0
+        marker.pose.orientation.w = 1.0
+        marker.scale.x = 0.15
+        marker.scale.y = 0.15
+        marker.scale.z = 0.15
+        marker.color.r = 1.0
+        marker.color.a = 1.0
+        self.goal_pub.publish(marker)
+
+        # publish the pure pursuit arc from the car (origin) to the goal point
+        arc_marker = Marker()
+        arc_marker.header = msg_scan.header  # same frame and time as the scan
+        arc_marker.ns = "follow_the_gap"
+        arc_marker.id = 2
+        arc_marker.type = Marker.LINE_STRIP
+        arc_marker.action = Marker.ADD
+        arc_marker.pose.orientation.w = 1.0
+        arc_marker.scale.x = 0.03  # line width [m]
+        arc_marker.color.r = 1.0
+        arc_marker.color.g = 0.6
+        arc_marker.color.a = 1.0
+        for ax, ay in self.pursuit_arc(goal_x, goal_y):
+            dx, dy = self.to_display(ax, ay, msg_scan.angle_min)
+            arc_marker.points.append(Point(x=dx, y=dy, z=0.0))
+        self.arc_pub.publish(arc_marker)
+
+        """
         rr.log(
             "car/goal",
             rr.Points3D(
@@ -220,9 +300,10 @@ class FollowTheGap(LifecycleNode):
                 colors=[[255, 0, 0]],
             ),
         )
+        """
 
         steering = self.pure_pursuit(goal_dist, goal_x) * sign
-
+        """
         rr.log(
             "car/curvature",
             rr.Ellipsoids3D(
@@ -231,14 +312,41 @@ class FollowTheGap(LifecycleNode):
                 colors=[255, 200, 10],
             ),
         )
+        """
         speed = (
-            BASIC_SPEED  # * speed_factor # + ((np.pi / 2) - np.abs(steering)) / np.pi
+            BASIC_SPEED
+            * 4  # * speed_factor # + ((np.pi / 2) - np.abs(steering)) / np.pi
         )
 
         if self.emergency:
             self.actuate_car(0.0, 0.0)
         else:
             self.actuate_car(speed, steering)
+
+    def to_display(self, x, y, angle_min):
+        """Algorithm coordinates -> lidar frame, for the display only.
+
+        The algorithm uses angle = index * angle_increment, the scan's real angle is
+        angle_min + index * angle_increment. Rotating by angle_min puts the point where
+        it really is in the lidar frame, so it lies on the scan in Foxglove.
+        """
+        c, s = np.cos(angle_min), np.sin(angle_min)
+        return float(c * x - s * y), float(s * x + c * y)
+
+    def pursuit_arc(self, goal_x, goal_y, n=40):
+        """Points of the circular arc from the car to the goal (algorithm coordinates).
+
+        In the algorithm coordinates goal_y points forward and goal_x sideways. The arc
+        starts at the car (0, 0) heading forward and ends at the goal; its centre lies on
+        the x axis at R = (goal_x^2 + goal_y^2) / (2 * goal_x), the curvature is 1 / R
+        (same geometry as pure pursuit: 2 * |goal_x| / distance^2).
+        """
+        if abs(goal_x) < 1e-6:  # goal straight ahead: straight line
+            return [(0.0, 0.0), (0.0, float(goal_y))]
+        R = (goal_x**2 + goal_y**2) / (2 * goal_x)  # signed radius
+        t_goal = np.arctan2(goal_y / R, 1 - goal_x / R)  # arc angle at the goal
+        t = np.linspace(0.0, t_goal, n)
+        return list(zip(R * (1 - np.cos(t)), R * np.sin(t)))
 
     def pure_pursuit(self, L, y):
         if abs(y) < 1e-6:
@@ -300,15 +408,20 @@ class FollowTheGap(LifecycleNode):
         ackermann_msg = AckermannDriveStamped()
         ackermann_msg.header.stamp = self.get_clock().now().to_msg()
 
-        ackermann_msg.drive.speed = 1.25  # float(speed)
+        ackermann_msg.drive.speed = 1.5  # float(speed)
+
+        self.get_logger().info(f"Steering 2: {steering}, Speed 2: {speed}")
+
         ackermann_msg.drive.steering_angle = float(steering)
 
+        """
         rr.log(
             "steering",
             rr.SeriesLines(colors=[255, 0, 0], names="steering", widths=2),
             static=True,
         )
         rr.log("steering", rr.Scalars(steering))
+        """
 
         self.ackermann_pub.publish(ackermann_msg)
 

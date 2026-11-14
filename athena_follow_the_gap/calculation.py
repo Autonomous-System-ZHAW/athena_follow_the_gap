@@ -4,14 +4,14 @@ from nav_msgs.msg import Odometry
 from rclpy.impl.rcutils_logger import RcutilsLogger
 
 CAR_WIDTH = 0.24
-MINIMAL_DISPARITY_GAP = 0.7
-DISPARITY_DISTANCE = 5.5
-DEFAULT_GAP = 0.8
+MINIMAL_DISPARITY_GAP = 0.5
+DISPARITY_DISTANCE = 2.0
+DEFAULT_GAP = 0.5
 DISTANCE_10_METER = 10
 DISTANCE_5_METER = 5
 DISTANCE_2_METER = 2
 DISTANCE_1_METER = 1
-SAFETY_MARGIN = 0.1  # 0.9
+SAFETY_MARGIN = 0.7  # 0.9
 
 
 class CalculationFollowTheGap:
@@ -188,7 +188,7 @@ class CalculationFollowTheGap:
         steering = (goal_target[0]) * self.angle_increment
 
         return (
-            (steering - (self.angle_increment_value_180_degree / 2)) * speed_factor,
+            steering,
             speed_factor,
         )
         """
